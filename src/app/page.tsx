@@ -6,45 +6,64 @@ import { motion } from 'framer-motion';
 import { collection, query, orderBy, limit, getDocs, onSnapshot } from 'firebase/firestore';
 import { db, isConfigured } from '@/lib/firebase';
 import Link from 'next/link';
+import PencilLoader from '@/components/PencilLoader';
 
 export default function HomePage() {
   const [admissionNotice, setAdmissionNotice] = useState('');
   const [upcomingEvents, setUpcomingEvents] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
 
   useEffect(() => {
-    if (!isConfigured) {
-      // Demo mode - show placeholder data
-      setAdmissionNotice('Admissions open for 2025-26! Limited seats available. Apply now!');
-      setUpcomingEvents([
-        { id: '1', title: 'Annual Sports Day', description: 'Join us for exciting athletic competitions', date: '2025-01-15', imageUrl: 'https://via.placeholder.com/400x300?text=Sports+Day' },
-        { id: '2', title: 'Science Exhibition', description: 'Students showcase innovative projects', date: '2025-02-20', imageUrl: 'https://via.placeholder.com/400x300?text=Science+Fair' },
-        { id: '3', title: 'Annual Day', description: 'Grand celebration with cultural performances', date: '2025-03-10', imageUrl: 'https://via.placeholder.com/400x300?text=Annual+Day' },
-      ]);
-      return;
-    }
-
-    // Real-time listener for admission notice
-    const noticeRef = collection(db, 'admissionNotices');
-    const noticeQuery = query(noticeRef, orderBy('timestamp', 'desc'), limit(1));
+    // Handle client-side mounting
+    setIsMounted(true);
     
-    const unsubscribe = onSnapshot(noticeQuery, (snapshot) => {
-      if (!snapshot.empty) {
-        setAdmissionNotice(snapshot.docs[0].data().text);
+    const loadData = async () => {
+      if (!isConfigured) {
+        // Demo mode - show placeholder data
+        setAdmissionNotice('Admissions open for 2025-26! Limited seats available. Apply now!');
+        setUpcomingEvents([
+          { id: '1', title: 'Annual Sports Day', description: 'Join us for exciting athletic competitions', date: '2025-01-15', imageUrl: 'https://via.placeholder.com/400x300?text=Sports+Day' },
+          { id: '2', title: 'Science Exhibition', description: 'Students showcase innovative projects', date: '2025-02-20', imageUrl: 'https://via.placeholder.com/400x300?text=Science+Fair' },
+          { id: '3', title: 'Annual Day', description: 'Grand celebration with cultural performances', date: '2025-03-10', imageUrl: 'https://via.placeholder.com/400x300?text=Annual+Day' },
+        ]);
+        // Simulate loading time
+        setTimeout(() => setIsLoading(false), 1500);
+        return;
       }
-    });
 
-    // Fetch upcoming events
-    const fetchEvents = async () => {
-      const eventsRef = collection(db, 'events');
-      const eventsQuery = query(eventsRef, orderBy('date', 'desc'), limit(3));
-      const snapshot = await getDocs(eventsQuery);
-      setUpcomingEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      // Real-time listener for admission notice
+      const noticeRef = collection(db, 'admissionNotices');
+      const noticeQuery = query(noticeRef, orderBy('timestamp', 'desc'), limit(1));
+      
+      const unsubscribe = onSnapshot(noticeQuery, (snapshot) => {
+        if (!snapshot.empty) {
+          setAdmissionNotice(snapshot.docs[0].data().text);
+        }
+      });
+
+      // Fetch upcoming events
+      try {
+        const eventsRef = collection(db, 'events');
+        const eventsQuery = query(eventsRef, orderBy('date', 'desc'), limit(3));
+        const snapshot = await getDocs(eventsQuery);
+        setUpcomingEvents(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+      } catch (error) {
+        console.error('Error fetching events:', error);
+      } finally {
+        setIsLoading(false);
+      }
+
+      return () => unsubscribe();
     };
 
-    fetchEvents();
-
-    return () => unsubscribe();
+    loadData();
   }, []);
+
+  // Show loader while loading or not mounted
+  if (isLoading || !isMounted) {
+    return <PencilLoader />;
+  }
 
   return (
     <div className="min-h-screen">
@@ -58,6 +77,10 @@ export default function HomePage() {
             muted 
             playsInline
             className="absolute inset-0 w-full h-full object-cover"
+            onLoadedData={() => {
+              // Ensure video is ready
+              console.log('Video loaded');
+            }}
           >
             <source src="/hero-video.mp4" type="video/mp4" />
             <source src="/hero-video.webm" type="video/webm" />
