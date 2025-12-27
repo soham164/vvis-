@@ -1,0 +1,47 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Gallery collection - allow authenticated users to write, everyone to read
+    match /gallery/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Events collection - allow authenticated users to write, everyone to read
+    match /events/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Admission notices - allow authenticated users to write, everyone to read
+    match /admissionNotices/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Faculty collection - allow authenticated users to write, everyone to read
+    match /faculty/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Mandatory disclosures - allow authenticated users to write, everyone to read
+    match /disclosures/{document=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // Contact form submissions - allow everyone to write, only authenticated to read
+    match /contactSubmissions/{document=**} {
+      allow read: if request.auth != null;
+      allow create: if true;
+    }
+    
+    // Default deny all other collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
