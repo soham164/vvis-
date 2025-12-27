@@ -3,8 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 
 interface Event {
   id: string;
@@ -22,6 +21,11 @@ export default function EventsManager() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Cloudinary config
+  const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
+  const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '';
 
   useEffect(() => {
     fetchEvents();
@@ -47,19 +51,56 @@ export default function EventsManager() {
     }
   };
 
+  const uploadToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', 'school-events');
+
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error('Cloudinary error details:', data);
+        const errorMsg = data.error?.message || JSON.stringify(data);
+        throw new Error(`Cloudinary error: ${errorMsg}`);
+      }
+
+      return data.secure_url;
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
+    setUploadProgress(0);
 
     try {
       let imageUrl = '';
 
       // Upload image if provided
       if (imageFile) {
-        const imageRef = ref(storage, `events/${Date.now()}_${imageFile.name}`);
-        await uploadBytes(imageRef, imageFile);
-        imageUrl = await getDownloadURL(imageRef);
+        if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+          setMessage('Cloudinary is not configured. Please check your .env.local file.');
+          setLoading(false);
+          return;
+        }
+
+        setUploadProgress(30);
+        imageUrl = await uploadToCloudinary(imageFile);
+        setUploadProgress(70);
       }
 
       // Add event to Firestore
@@ -71,17 +112,33 @@ export default function EventsManager() {
         createdAt: new Date().toISOString()
       });
 
+      setUploadProgress(100);
       setMessage('Event added successfully!');
       setTitle('');
       setDescription('');
       setDate('');
       setImageFile(null);
+      
+      // Reset file input
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
       fetchEvents();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding event:', error);
-      setMessage('Error adding event. Please try again.');
+      
+      let errorMessage = 'Error adding event: ';
+      
+      if (error.message.includes('Cloudinary')) {
+        errorMessage += error.message;
+      } else {
+        errorMessage += error.message || 'Please try again.';
+      }
+      
+      setMessage(errorMessage);
     } finally {
       setLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -107,8 +164,17 @@ export default function EventsManager() {
         <h3 className="text-xl font-semibold text-[#2E1A47]">Add New Event</h3>
 
         {message && (
-          <div className={`p-4 rounded-lg ${message.includes('Error') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+          <div className={`p-4 rounded-lg ${message.includes('Error') || message.includes('not configured') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
             {message}
+          </div>
+        )}
+
+        {loading && uploadProgress > 0 && (
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div 
+              className="bg-[#4CB5E6] h-2.5 rounded-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
           </div>
         )}
 
@@ -170,7 +236,7 @@ export default function EventsManager() {
           disabled={loading}
           className="w-full py-3 bg-[#4CB5E6] text-white font-semibold rounded-lg hover:bg-[#FBD106] transition-colors duration-200 disabled:opacity-50"
         >
-          {loading ? 'Adding Event...' : 'Add Event'}
+          {loading ? `${imageFile ? 'Uploading' : 'Adding'} Event... ${uploadProgress}%` : 'Add Event'}
         </button>
       </form>
 

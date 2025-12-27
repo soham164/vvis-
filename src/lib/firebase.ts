@@ -27,8 +27,12 @@ try {
   auth = getAuth(app);
   db = getFirestore(app);
   storage = getStorage(app);
+  
+  // Log storage bucket for debugging
+  console.log('Firebase initialized successfully');
+  console.log('Storage bucket:', firebaseConfig.storageBucket);
 } catch (error) {
-  console.warn('Firebase initialization error. Using demo mode.');
+  console.error('Firebase initialization error:', error);
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
   auth = getAuth(app);
   db = getFirestore(app);

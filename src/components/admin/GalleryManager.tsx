@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { collection, addDoc, getDocs, deleteDoc, doc } from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from '@/lib/firebase';
+import { db } from '@/lib/firebase';
 
 interface GalleryImage {
   id: string;
@@ -21,6 +20,11 @@ export default function GalleryManager() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [uploadProgress, setUploadProgress] = useState(0);
+
+  // Cloudinary config - get from environment variables
+  const CLOUDINARY_CLOUD_NAME = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
+  const CLOUDINARY_UPLOAD_PRESET = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '';
 
   useEffect(() => {
     fetchImages();
@@ -46,10 +50,50 @@ export default function GalleryManager() {
     }
   };
 
+  const uploadToCloudinary = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    formData.append('folder', 'school-gallery');
+
+    console.log('Cloudinary config:', {
+      cloudName: CLOUDINARY_CLOUD_NAME,
+      uploadPreset: CLOUDINARY_UPLOAD_PRESET,
+      fileSize: file.size,
+      fileType: file.type
+    });
+
+    try {
+      const response = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      const data = await response.json();
+      console.log('Cloudinary response:', data);
+
+      if (!response.ok) {
+        console.error('Cloudinary error details:', data);
+        // Show the actual error from Cloudinary
+        const errorMsg = data.error?.message || JSON.stringify(data);
+        throw new Error(`Cloudinary error: ${errorMsg}`);
+      }
+
+      return data.secure_url;
+    } catch (error: any) {
+      console.error('Upload error:', error);
+      throw error;
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setMessage('');
+    setUploadProgress(0);
 
     if (!imageFile) {
       setMessage('Please select an image to upload.');
@@ -57,11 +101,23 @@ export default function GalleryManager() {
       return;
     }
 
-    try {
-      const imageRef = ref(storage, `gallery/${Date.now()}_${imageFile.name}`);
-      await uploadBytes(imageRef, imageFile);
-      const imageUrl = await getDownloadURL(imageRef);
+    if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) {
+      setMessage('Cloudinary is not configured. Please check your .env.local file.');
+      setLoading(false);
+      return;
+    }
 
+    try {
+      console.log('Uploading to Cloudinary...');
+      setUploadProgress(30);
+      
+      // Upload to Cloudinary
+      const imageUrl = await uploadToCloudinary(imageFile);
+      console.log('Cloudinary URL:', imageUrl);
+      setUploadProgress(70);
+
+      // Save to Firestore
+      console.log('Saving to Firestore...');
       await addDoc(collection(db, 'gallery'), {
         title,
         category,
@@ -69,16 +125,34 @@ export default function GalleryManager() {
         uploadedAt: new Date().toISOString()
       });
 
+      setUploadProgress(100);
+      console.log('Successfully saved to Firestore!');
       setMessage('Image uploaded successfully!');
       setTitle('');
       setCategory('Sports');
       setImageFile(null);
+      
+      // Reset file input
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      if (fileInput) fileInput.value = '';
+      
       fetchImages();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error uploading image:', error);
-      setMessage('Error uploading image. Please try again.');
+      
+      let errorMessage = 'Error uploading image: ';
+      
+      if (error.message.includes('Cloudinary')) {
+        errorMessage += error.message + ' - Check browser console for details. ';
+        errorMessage += 'Make sure your upload preset is set to "Unsigned" in Cloudinary settings.';
+      } else {
+        errorMessage += error.message || 'Please try again.';
+      }
+      
+      setMessage(errorMessage);
     } finally {
       setLoading(false);
+      setUploadProgress(0);
     }
   };
 
@@ -99,13 +173,41 @@ export default function GalleryManager() {
     <div className="space-y-8">
       <h2 className="text-3xl font-bold text-[#2E1A47]">Gallery Manager</h2>
 
+      {/* Cloudinary Status */}
+      {(!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-yellow-700">
+                <strong>Cloudinary not configured.</strong> Please add your Cloudinary credentials to .env.local file.
+                Check CLOUDINARY_SETUP.md for instructions.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Form */}
       <form onSubmit={handleSubmit} className="space-y-6 bg-gray-50 p-6 rounded-lg">
         <h3 className="text-xl font-semibold text-[#2E1A47]">Upload New Image</h3>
 
         {message && (
-          <div className={`p-4 rounded-lg ${message.includes('Error') || message.includes('Please') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+          <div className={`p-4 rounded-lg ${message.includes('Error') || message.includes('Please') || message.includes('not configured') ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
             {message}
+          </div>
+        )}
+
+        {loading && uploadProgress > 0 && (
+          <div className="w-full bg-gray-200 rounded-full h-2.5">
+            <div 
+              className="bg-[#4CB5E6] h-2.5 rounded-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            ></div>
           </div>
         )}
 
@@ -155,10 +257,10 @@ export default function GalleryManager() {
 
         <button
           type="submit"
-          disabled={loading}
-          className="w-full py-3 bg-[#4CB5E6] text-white font-semibold rounded-lg hover:bg-[#FBD106] hover:text-[#2E1A47] transition-colors disabled:opacity-50"
+          disabled={loading || !CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET}
+          className="w-full py-3 bg-[#4CB5E6] text-white font-semibold rounded-lg hover:bg-[#FBD106] hover:text-[#2E1A47] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {loading ? 'Uploading...' : 'Upload Image'}
+          {loading ? `Uploading... ${uploadProgress}%` : 'Upload Image'}
         </button>
       </form>
 
