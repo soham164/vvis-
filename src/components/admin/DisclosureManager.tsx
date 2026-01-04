@@ -66,7 +66,6 @@ export default function DisclosureManager() {
     formData.append('file', file);
     formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
     formData.append('folder', 'school-disclosures');
-    formData.append('resource_type', 'raw'); // Important for PDFs
 
     console.log('Uploading PDF to Cloudinary:', {
       cloudName: CLOUDINARY_CLOUD_NAME,
@@ -76,8 +75,9 @@ export default function DisclosureManager() {
     });
 
     try {
+      // Use image/upload endpoint which supports PDFs and allows inline viewing
       const response = await fetch(
-        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/raw/upload`,
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
         {
           method: 'POST',
           body: formData,
@@ -93,7 +93,12 @@ export default function DisclosureManager() {
         throw new Error(`Cloudinary error: ${errorMsg}`);
       }
 
-      return data.secure_url;
+      // Convert to a viewable URL format
+      // Change from /image/upload/ to /image/upload/fl_attachment/ for inline viewing
+      const viewableUrl = data.secure_url.replace('/upload/', '/upload/fl_attachment:false/');
+      console.log('Viewable URL:', viewableUrl);
+      
+      return viewableUrl;
     } catch (error: any) {
       console.error('Upload error:', error);
       throw error;

@@ -3,6 +3,8 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { collection, addDoc } from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 
 export default function ContactPage() {
   const [name, setName] = useState('');
@@ -10,18 +12,77 @@ export default function ContactPage() {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
   const [submitMessage, setSubmitMessage] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitMessage('Thank you for your message! We will get back to you soon.');
-    
-    // Reset form
-    setName('');
-    setEmail('');
-    setSubject('');
-    setMessage('');
+    setLoading(true);
+    setSubmitMessage('');
 
-    setTimeout(() => setSubmitMessage(''), 5000);
+    try {
+      // Save to Firestore
+      await addDoc(collection(db, 'contactSubmissions'), {
+        name,
+        email,
+        subject,
+        message,
+        timestamp: new Date().toISOString(),
+        status: 'new'
+      });
+
+      // Send confirmation email using EmailJS
+      const emailJSServiceId = process.env.NEXT_PUBLIC_EMAILJS_SERVICE_ID;
+      const emailJSTemplateId = process.env.NEXT_PUBLIC_EMAILJS_TEMPLATE_ID;
+      const emailJSPublicKey = process.env.NEXT_PUBLIC_EMAILJS_PUBLIC_KEY;
+
+      if (emailJSServiceId && emailJSTemplateId && emailJSPublicKey) {
+        try {
+          const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              service_id: emailJSServiceId,
+              template_id: emailJSTemplateId,
+              user_id: emailJSPublicKey,
+              template_params: {
+                to_email: email,
+                to_name: name,
+                from_name: 'Vidya Vikas International School',
+                subject: subject,
+                message: message,
+                reply_to: 'vidyavikas440@gmail.com'
+              }
+            })
+          });
+
+          if (response.ok) {
+            console.log('Confirmation email sent successfully');
+          } else {
+            console.error('Failed to send confirmation email');
+          }
+        } catch (emailError) {
+          console.error('Email sending error:', emailError);
+          // Don't fail the whole submission if email fails
+        }
+      }
+
+      setSubmitMessage('Thank you for your message! We have received your enquiry and will get back to you soon. A confirmation email has been sent to your email address.');
+      
+      // Reset form
+      setName('');
+      setEmail('');
+      setSubject('');
+      setMessage('');
+
+      setTimeout(() => setSubmitMessage(''), 10000);
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setSubmitMessage('Sorry, there was an error submitting your message. Please try again or contact us directly.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -208,7 +269,7 @@ export default function ContactPage() {
               </h2>
 
               {submitMessage && (
-                <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-green-700">
+                <div className={`mb-6 p-4 rounded-lg ${submitMessage.includes('error') || submitMessage.includes('Sorry') ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-green-50 border border-green-200 text-green-700'}`}>
                   {submitMessage}
                 </div>
               )}
@@ -223,7 +284,8 @@ export default function ContactPage() {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent"
+                    disabled={loading}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent disabled:opacity-50"
                     placeholder="John Doe"
                   />
                 </div>
@@ -237,7 +299,8 @@ export default function ContactPage() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent"
+                    disabled={loading}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent disabled:opacity-50"
                     placeholder="john@example.com"
                   />
                 </div>
@@ -251,7 +314,8 @@ export default function ContactPage() {
                     value={subject}
                     onChange={(e) => setSubject(e.target.value)}
                     required
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent"
+                    disabled={loading}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent disabled:opacity-50"
                     placeholder="Admission Inquiry"
                   />
                 </div>
@@ -264,17 +328,19 @@ export default function ContactPage() {
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     required
+                    disabled={loading}
                     rows={5}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent resize-none"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#4CB5E6] focus:border-transparent resize-none disabled:opacity-50"
                     placeholder="Your message here..."
                   />
                 </div>
 
                 <button
                   type="submit"
-                  className="w-full py-3 bg-[#4CB5E6] text-white font-semibold rounded-lg hover:bg-[#FBD106] transition-colors duration-200 transform hover:scale-105"
+                  disabled={loading}
+                  className="w-full py-3 bg-[#4CB5E6] text-white font-semibold rounded-lg hover:bg-[#FBD106] transition-colors duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Send Message
+                  {loading ? 'Sending...' : 'Send Message'}
                 </button>
               </form>
             </motion.div>

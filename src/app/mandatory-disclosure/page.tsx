@@ -162,6 +162,11 @@ export default function MandatoryDisclosurePage() {
                         href={disclosure.fileUrl}
                         target="_blank"
                         rel="noopener noreferrer"
+                        onClick={(e) => {
+                          // For better PDF viewing, open in new tab with proper headers
+                          e.preventDefault();
+                          window.open(disclosure.fileUrl, '_blank', 'noopener,noreferrer');
+                        }}
                         className="inline-flex items-center text-[#4CB5E6] hover:text-[#2E1A47] font-semibold transition-colors"
                       >
                         <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
